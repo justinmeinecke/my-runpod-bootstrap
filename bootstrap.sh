@@ -119,8 +119,10 @@ echo "Using ComfyUI at: $COMFY_ROOT"
 echo "Models path: $BASE_PATH"
 
   # -------------------------
-  # QWEN BASE MODEL
+  # QWEN
   # -------------------------
+
+  if [ "$MODE" = "image" ] || [ "$MODE" = "both" ]; then
 
   echo "Installing Qwen Base Model..."
   cd "$BASE_PATH/diffusion_models"
@@ -132,10 +134,6 @@ echo "Models path: $BASE_PATH"
     echo "✔ Qwen base model exists"
   fi
 
-  # -------------------------
-  # QWEN VAE
-  # -------------------------
-
   echo "Installing Qwen VAE..."
   cd "$BASE_PATH/vae"
   if [ ! -f "qwen_image_vae.safetensors" ]; then
@@ -146,10 +144,6 @@ echo "Models path: $BASE_PATH"
     echo "✔ Qwen VAE exists"
   fi
 
-  # -------------------------
-  # QWEN TEXT ENCODER
-  # -------------------------
-
   echo "Installing Qwen Text Encoder..."
   cd "$BASE_PATH/text_encoders"
   if [ ! -f "qwen_2.5_vl_7b_fp8_scaled.safetensors" ]; then
@@ -159,6 +153,9 @@ echo "Models path: $BASE_PATH"
   else
     echo "✔ Qwen Text Encoder exists"
   fi
+
+fi
+
 # -------------------------
 # IMAGE LORAS
 # -------------------------
