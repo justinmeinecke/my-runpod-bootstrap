@@ -100,20 +100,7 @@ fi
 
 echo "Using Python: $VENV_PYTHON"
 
-# ONLY install torch if using venv (prevents breaking system/python mismatch)
-if [[ "$VENV_PYTHON" == *".venv"* ]]; then
-echo "Checking PyTorch in ComfyUI venv..."
-
-if ! $VENV_PYTHON -c "import torch" >/dev/null 2>&1; then
-  echo "Installing PyTorch..."
-  $VENV_PYTHON -m pip install --no-cache-dir torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu124 || true
-else
-  echo "✔ PyTorch already installed"
-fi
-else
-  echo "⚠ Skipping torch install (not using venv)"
-fi
+echo "Using RunPod's preinstalled PyTorch/CUDA environment"
 
 for dir in "$CUSTOM_NODE_PATH"/*
 do
