@@ -6,7 +6,7 @@ echo "=== RUNPOD BOOTSTRAP START ==="
 MODE="${MODE:-image}"
 echo "Mode: $MODE"
 
-if [[ "$MODE" != "image" && "$MODE" != "video" && "$MODE" != "lora" && "$MODE" != "both" ]]; then
+if [[ "$MODE" != "image" && "$MODE" != "video" && "$MODE" != "both" ]]; then
   echo "❌ Invalid MODE: $MODE"
   exit 1
 fi
@@ -14,109 +14,8 @@ fi
 # BASIC PACKAGES
 # -------------------------
 apt-get update -qq
-apt-get install -y -qq unzip wget curl rclone git ffmpeg
+apt-get install -y -qq unzip wget curl git ffmpeg
 
-
-# -------------------------
-# RCLONE CONFIG
-# -------------------------
-echo "Configuring rclone..."
-
-if [ -n "${rclone_gdrive_token:-}" ]; then
-  TOKEN="$rclone_gdrive_token"
-  echo "Using rclone_gdrive_token"
-elif [ -n "${gdrive_runpod_root:-}" ]; then
-  TOKEN="$gdrive_runpod_root"
-  echo "Using gdrive_runpod_root"
-else
-  echo "❌ No Google Drive token provided"
-  exit 1
-fi
-
-if [[ "$TOKEN" == "REAL_TOKEN" || -z "$TOKEN" ]]; then
-  echo "❌ Invalid Google Drive token"
-  exit 1
-fi
-
-mkdir -p ~/.config/rclone
-rm -f ~/.config/rclone/rclone.conf
-
-cat > ~/.config/rclone/rclone.conf <<EOF
-[gdrive]
-type = drive
-scope = drive
-token = $TOKEN
-EOF
-
-if ! rclone about gdrive: > /dev/null 2>&1; then
-  echo "❌ Failed to connect to Google Drive"
-  exit 1
-fi
-
-echo "✔ rclone configured"
-
-# -------------------------
-# LORA DATASET MODE (EXIT EARLY)
-# -------------------------
-if [ "$MODE" = "lora" ]; then
-  echo "=== LORA MODE: downloading datasets ==="
-
-  DATASET_ROOT="/workspace/datasets"
-  mkdir -p "$DATASET_ROOT"
-
-  # Copy zips; don't re-download if already present
-  rclone copy gdrive:runpod/dataset "$DATASET_ROOT" \
-    --include "*.zip" \
-    --ignore-existing \
-    --progress
-
-  echo "Extracting datasets..."
-  cd "$DATASET_ROOT"
-
-  shopt -s nullglob
-  for f in *.zip; do
-    name=$(basename "$f" .zip)
-    mkdir -p "$name"
-    unzip -o "$f" -d "$name"
-  done
-  shopt -u nullglob
-
-  echo
-  echo "Datasets ready:"
-  ls -lh "$DATASET_ROOT"
-
-  echo
-echo "Starting LoRA output auto-sync..."
-
-nohup bash -lc '
-while true; do
-  for d in /workspace/output /workspace/outputs /workspace/out /workspace/results /workspace/runs /workspace/training_outputs /workspace/lora /workspace/loras /workspace/models /workspace/checkpoints; do
-    if [ -d "$d" ]; then
-      rclone copy "$d" "gdrive:runpod/lora/output" \
-        --include "*.safetensors" \
-        --include "*.pt" \
-        --include "*.json" \
-        --include "*.yaml" \
-        --include "*.yml" \
-        --exclude "*" \
-        --ignore-existing \
-        --min-age 30s \
-        --transfers 4 \
-        --checkers 8
-    fi
-  done
-  sleep 60
-done
-' >> /workspace/rclone_lora_output.log 2>&1 &
-
-echo "✔ LoRA output auto-sync running"
-echo "=== LORA BOOTSTRAP COMPLETE ==="
-exit 0
-
-  echo "✔ LoRA output auto-sync running to: $LORA_DRIVE_TARGET"
-  echo "=== LORA BOOTSTRAP COMPLETE ==="
-  exit 0
-fi
 
 # -------------------------
 # COMFYUI SETUP (IMAGE / VIDEO MODES ONLY)
@@ -274,21 +173,6 @@ echo "Models path: $BASE_PATH"
     echo "✔ Qwen Text Encoder exists"
   fi
 # -------------------------
-# DRIVE ZIP (Smart Skip)
-# -------------------------
-
-echo "Restoring Drive LoRAs (if available)..."
-
-if rclone copy gdrive:runpod/image/loras.zip /tmp/ >/dev/null 2>&1 && [ -f /tmp/loras.zip ]; then
-    unzip -o /tmp/loras.zip -d /tmp/loras_tmp
-    find /tmp/loras_tmp -type f -name "*.safetensors" -exec mv -f {} "$BASE_PATH/loras/" \;
-    rm -rf /tmp/loras_tmp
-    rm -f /tmp/loras.zip
-    echo "✔ Drive LoRAs restored"
-else
-    echo "⚠ No loras.zip found on Drive"
-fi
-# -------------------------
 # IMAGE LORAS
 # -------------------------
 
@@ -339,15 +223,6 @@ if [ "$MODE" = "image" ] || [ "$MODE" = "both" ]; then
   done
 
 fi
-# -------------------------
-# WILDCARDS SYNC
-# -------------------------
-
-echo "Syncing wildcards..."
-rclone sync gdrive:runpod/image/wildcards \
-  "$BASE_PATH/wildcards" \
-  --include "*.txt" \
-  --progress
 # -------------------------
 # VIDEO MODE WAN MODELS
 # -------------------------
@@ -475,68 +350,10 @@ if [ "$MODE" = "video" ] || [ "$MODE" = "both" ]; then
 fi
 
 # -------------------------
-# WORKFLOW SYNC (Named Only)
+# WORKFLOWS
 # -------------------------
-
-echo "Syncing workflow for $MODE mode..."
-
-WORKFLOW_DIR="$COMFY_ROOT/user/default/workflows"
-mkdir -p "$WORKFLOW_DIR"
-
-if [ "$MODE" = "image" ] || [ "$MODE" = "both" ]; then
-    rclone copy gdrive:runpod/image/image.json "$WORKFLOW_DIR/"
-fi
-
-if [ "$MODE" = "video" ] || [ "$MODE" = "both" ]; then
-    rclone copy gdrive:runpod/video/video.json "$WORKFLOW_DIR/"
-    rclone copy gdrive:runpod/video/video_api.json "$WORKFLOW_DIR/"
-    rclone copy gdrive:runpod/video/batch_i2v.py "$COMFY_ROOT/"
-fi
-
-# -------------------------
-# AUTO SYNC OUTPUTS TO DRIVE (ALL MODES)
-# -------------------------
-
-echo "Starting universal output auto-sync..."
-
-if [ "$MODE" = "image" ]; then
-    DRIVE_TARGET="gdrive:runpod/image/output"
-elif [ "$MODE" = "video" ]; then
-    DRIVE_TARGET="gdrive:runpod/video/output"
-elif [ "$MODE" = "both" ]; then
-    DRIVE_TARGET="gdrive:runpod/both/output"
-fi
-
-nohup bash -lc '
-while true; do
-
-  for d in \
-    '"$COMFY_ROOT"'/output \
-    /workspace/output \
-    /workspace/outputs \
-    /workspace/out \
-    /workspace/results \
-    /workspace/runs \
-    /workspace/training_outputs \
-    /workspace/lora \
-    /workspace/loras \
-    /workspace/models \
-    /workspace/checkpoints
-  do
-    if [ -d "$d" ]; then
-      rclone copy "$d" "'"$DRIVE_TARGET"'" \
-        --ignore-existing \
-        --min-age 30s \
-        --transfers 4 \
-        --checkers 8
-    fi
-  done
-
-  sleep 60
-
-done
-' >> /workspace/rclone_output.log 2>&1 &
-
-echo "✔ Output auto-sync running to $DRIVE_TARGET"
+# Google Drive workflow sync removed.
+# Put your workflow JSON files directly in this repo and copy them manually,
+# or add local copy commands here later.
 
 echo "=== BOOTSTRAP COMPLETE ==="
