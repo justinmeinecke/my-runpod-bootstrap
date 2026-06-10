@@ -109,7 +109,7 @@ do
     if [ -f "$req" ]; then
         name=$(basename "$dir")
         echo "Installing requirements for $name"
-        $VENV_PYTHON -m pip install --upgrade --no-cache-dir -r "$req" || true
+        $VENV_PYTHON -m pip install --no-cache-dir -r "$req" || true
     fi
 done
 
